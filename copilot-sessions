@@ -1,0 +1,61 @@
+#!/bin/bash
+# List GitHub Copilot CLI sessions with their first user message
+# Usage: copilot-sessions [-s] [max_msg_len]
+#   -s  Select mode: use fzf to pick a session and output ID for copilot --resume
+#   Example: copilot --resume=$(copilot-sessions -s)
+
+SESSION_DIR="$HOME/.copilot/session-state"
+SELECT_MODE=false
+MAX_MSG_LEN=120
+ID_LEN=8
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -s|--select) SELECT_MODE=true; shift ;;
+        -h|--help)
+            echo "Usage: copilot-sessions [-s] [max_msg_len]"
+            echo "  -s, --select  Interactive selection mode (requires fzf)"
+            echo "                Returns session ID for: copilot --resume=\$(copilot-sessions -s)"
+            echo "  max_msg_len   Maximum message length (default: 80)"
+            exit 0 ;;
+        *) MAX_MSG_LEN=$1; shift ;;
+    esac
+done
+
+if [[ ! -d "$SESSION_DIR" ]]; then
+    echo "Session directory not found: $SESSION_DIR" >&2
+    exit 1
+fi
+
+list_sessions() {
+    for file in "$SESSION_DIR"/*.jsonl; do
+        [[ -f "$file" ]] || continue
+        
+        session_id=$(basename "$file" .jsonl)
+        
+        # Get timestamp from session.start
+        start_time=$(grep -m1 '"type":"session.start"' "$file" 2>/dev/null | \
+            sed -n 's/.*"startTime":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
+        
+        # Get first user message content
+        first_msg=$(grep -m1 '"type":"user.message"' "$file" 2>/dev/null | \
+            sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | head -c "$MAX_MSG_LEN")
+        
+        [[ -z "$first_msg" ]] && first_msg="(no user message)"
+        
+        printf "%-8s  %-19s  %s\n" "${session_id:0:$ID_LEN}" "$start_time" "$first_msg"
+    done | sort -k2,3
+}
+
+if $SELECT_MODE; then
+    if ! command -v fzf &>/dev/null; then
+        echo "fzf is required for select mode. Install with: sudo dnf install fzf" >&2
+        exit 1
+    fi
+    selected=$(list_sessions | fzf --tac --header="Select session to resume" --preview-window=hidden)
+    [[ -n "$selected" ]] && echo "$selected" | awk '{print $1}'
+else
+    printf "%-8s  %-19s  %s\n" "ID" "DATE" "FIRST MESSAGE"
+    printf "%s\n" "$(printf '=%.0s' {1..150})"
+    list_sessions
+fi
