@@ -5,7 +5,7 @@ Simple tools to list and resume GitHub Copilot CLI sessions.
 ## Tools
 
 - **copilot-sessions** - List all sessions with date and first user message
-- **copilot-wrapper** - Wrapper adding `-S`/`--select` option for interactive session selection
+- **copilot-wrapper** - Wrapper adding `-S`/`--select` and `-K`/`--keyword` options for interactive session selection
 
 ## Installation
 
@@ -28,9 +28,16 @@ sudo ln -s /usr/local/bin/copilot-wrapper /usr/local/bin/copilot
 # List sessions
 copilot-sessions
 
+# Filter sessions by keyword
+copilot-sessions -k mariadb
+
 # Interactive session selection
 copilot -S
 copilot --select
+
+# Search and select sessions by keyword
+copilot -K galera
+copilot --keyword mariadb
 
 # Normal copilot usage (unchanged)
 copilot [any options]

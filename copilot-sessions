@@ -1,22 +1,26 @@
 #!/bin/bash
 # List GitHub Copilot CLI sessions with their first user message
-# Usage: copilot-sessions [-s] [max_msg_len]
+# Usage: copilot-sessions [-s] [-k keyword] [max_msg_len]
 #   -s  Select mode: use fzf to pick a session and output ID for copilot --resume
+#   -k  Filter sessions by keyword (searches in all user messages)
 #   Example: copilot --resume=$(copilot-sessions -s)
 
 SESSION_DIR="$HOME/.copilot/session-state"
 SELECT_MODE=false
 MAX_MSG_LEN=120
 ID_LEN=8
+KEYWORD=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         -s|--select) SELECT_MODE=true; shift ;;
+        -k|--keyword) KEYWORD="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: copilot-sessions [-s] [max_msg_len]"
-            echo "  -s, --select  Interactive selection mode (requires fzf)"
-            echo "                Returns session ID for: copilot --resume=\$(copilot-sessions -s)"
-            echo "  max_msg_len   Maximum message length (default: 80)"
+            echo "Usage: copilot-sessions [-s] [-k keyword] [max_msg_len]"
+            echo "  -s, --select      Interactive selection mode (requires fzf)"
+            echo "                    Returns session ID for: copilot --resume=\$(copilot-sessions -s)"
+            echo "  -k, --keyword     Filter sessions containing keyword in any user message"
+            echo "  max_msg_len       Maximum message length (default: 120)"
             exit 0 ;;
         *) MAX_MSG_LEN=$1; shift ;;
     esac
@@ -30,6 +34,12 @@ fi
 list_sessions() {
     for file in "$SESSION_DIR"/*.jsonl; do
         [[ -f "$file" ]] || continue
+        
+        # If keyword specified, check if any user message contains it
+        if [[ -n "$KEYWORD" ]]; then
+            grep -q '"type":"user.message"' "$file" 2>/dev/null || continue
+            grep '"type":"user.message"' "$file" 2>/dev/null | grep -qi "$KEYWORD" || continue
+        fi
         
         session_id=$(basename "$file" .jsonl)
         
