@@ -31,12 +31,19 @@ if [[ ! -d "$SESSION_DIR" ]]; then
     exit 1
 fi
 
+# Extract last 2 path components for compact display
+short_path() {
+    echo "$1" | awk -F/ '{if(NF>=2) print $(NF-1)"/"$NF; else print $NF}'
+}
+
 list_sessions() {
     # Process both old format (*.jsonl) and new format (dir/events.jsonl)
     find "$SESSION_DIR" -maxdepth 2 -name '*.jsonl' -type f | while read -r file; do
+        local session_dir=""
         # Determine session ID based on format
         if [[ "$(basename "$file")" == "events.jsonl" ]]; then
-            session_id=$(basename "$(dirname "$file")")
+            session_dir=$(dirname "$file")
+            session_id=$(basename "$session_dir")
         else
             session_id=$(basename "$file" .jsonl)
         fi
@@ -51,13 +58,20 @@ list_sessions() {
         start_time=$(grep -m1 '"type":"session.start"' "$file" 2>/dev/null | \
             sed -n 's/.*"startTime":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
         
+        # Get cwd from workspace.yaml (new format only)
+        cwd=""
+        if [[ -n "$session_dir" && -f "$session_dir/workspace.yaml" ]]; then
+            cwd=$(sed -n 's/^cwd: *//p' "$session_dir/workspace.yaml")
+            cwd=$(short_path "$cwd")
+        fi
+        
         # Get first user message content
         first_msg=$(grep -m1 '"type":"user.message"' "$file" 2>/dev/null | \
             sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | head -c "$MAX_MSG_LEN")
         
         [[ -z "$first_msg" ]] && first_msg="(no user message)"
         
-        printf "%-8s  %-19s  %s\n" "${session_id:0:$ID_LEN}" "$start_time" "$first_msg"
+        printf "%-8s  %-19s  %-30s  %s\n" "${session_id:0:$ID_LEN}" "$start_time" "$cwd" "$first_msg"
     done | sort -k2,3
 }
 
@@ -69,7 +83,7 @@ if $SELECT_MODE; then
     selected=$(list_sessions | fzf --tac --header="Select session to resume" --preview-window=hidden)
     [[ -n "$selected" ]] && echo "$selected" | awk '{print $1}'
 else
-    printf "%-8s  %-19s  %s\n" "ID" "DATE" "FIRST MESSAGE"
-    printf "%s\n" "$(printf '=%.0s' {1..150})"
+    printf "%-8s  %-19s  %-30s  %s\n" "ID" "DATE" "DIRECTORY" "FIRST MESSAGE"
+    printf "%s\n" "$(printf '=%.0s' {1..180})"
     list_sessions
 fi

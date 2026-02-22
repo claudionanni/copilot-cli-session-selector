@@ -1,72 +1,54 @@
 #!/bin/bash
 # Wrapper for GitHub Copilot CLI with session selection support
 # Install: sudo mv /usr/local/bin/copilot /usr/local/bin/copilot-real
+#          sudo cp copilot-sessions /usr/local/bin/
 #          sudo ln -s /path/to/copilot-wrapper /usr/local/bin/copilot
 #
 # Usage: copilot [options]
-#   --select, -S         Interactive session selection (requires fzf)
-#   --keyword, -K word   Filter sessions by keyword before selection
+#   --select, -S             Interactive session selection (requires fzf)
+#   --keyword, -K word       Search and select sessions by keyword
+#   --list, -L               List all sessions (no selection)
+#   --list -k word           List sessions filtered by keyword
 #   All other options passed to copilot
 
 COPILOT_REAL="/usr/local/bin/copilot-real"
+COPILOT_SESSIONS="/usr/local/bin/copilot-sessions"
 SESSION_DIR="$HOME/.copilot/session-state"
-MAX_MSG_LEN=120
-ID_LEN=8
 
 # Parse arguments
 SELECT_MODE=false
+LIST_MODE=false
 KEYWORD=""
 ARGS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --select|-S) SELECT_MODE=true; shift ;;
         --keyword|-K) KEYWORD="$2"; SELECT_MODE=true; shift 2 ;;
+        --list|-L) LIST_MODE=true; shift ;;
+        -k) KEYWORD="$2"; shift 2 ;;
         *) ARGS+=("$1"); shift ;;
     esac
 done
 
-if $SELECT_MODE; then
+if $LIST_MODE; then
+    if [[ -n "$KEYWORD" ]]; then
+        exec "$COPILOT_SESSIONS" -k "$KEYWORD"
+    else
+        exec "$COPILOT_SESSIONS"
+    fi
+elif $SELECT_MODE; then
     if ! command -v fzf &>/dev/null; then
         echo "fzf is required for session selection. Install with: sudo dnf install fzf" >&2
         exit 1
     fi
-    
-    if [[ ! -d "$SESSION_DIR" ]]; then
-        echo "Session directory not found: $SESSION_DIR" >&2
-        exit 1
+
+    if [[ -n "$KEYWORD" ]]; then
+        short_id=$("$COPILOT_SESSIONS" -k "$KEYWORD" -s)
+    else
+        short_id=$("$COPILOT_SESSIONS" -s)
     fi
-    
-    # Build session list
-    list_sessions() {
-        find "$SESSION_DIR" -maxdepth 2 -name '*.jsonl' -type f | while read -r file; do
-            if [[ "$(basename "$file")" == "events.jsonl" ]]; then
-                session_id=$(basename "$(dirname "$file")")
-            else
-                session_id=$(basename "$file" .jsonl)
-            fi
-            
-            # If keyword specified, check if any user message contains it
-            if [[ -n "$KEYWORD" ]]; then
-                grep -q '"type":"user.message"' "$file" 2>/dev/null || continue
-                grep '"type":"user.message"' "$file" 2>/dev/null | grep -qi "$KEYWORD" || continue
-            fi
-            
-            start_time=$(grep -m1 '"type":"session.start"' "$file" 2>/dev/null | \
-                sed -n 's/.*"startTime":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
-            
-            first_msg=$(grep -m1 '"type":"user.message"' "$file" 2>/dev/null | \
-                sed -n 's/.*"content":"\([^"]*\)".*/\1/p' | head -c "$MAX_MSG_LEN")
-            
-            [[ -z "$first_msg" ]] && first_msg="(no user message)"
-            
-            printf "%-8s  %-19s  %s\n" "${session_id:0:$ID_LEN}" "$start_time" "$first_msg"
-        done | sort -k2,3
-    }
-    
-    selected=$(list_sessions | fzf --tac --header="Select session to resume (ESC to start new)" --preview-window=hidden)
-    
-    if [[ -n "$selected" ]]; then
-        short_id=$(echo "$selected" | awk '{print $1}')
+
+    if [[ -n "$short_id" ]]; then
         # Find full session ID from short prefix
         for entry in "$SESSION_DIR"/*; do
             full_id=$(basename "$entry" .jsonl)
