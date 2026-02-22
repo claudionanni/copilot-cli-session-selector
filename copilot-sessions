@@ -32,16 +32,20 @@ if [[ ! -d "$SESSION_DIR" ]]; then
 fi
 
 list_sessions() {
-    for file in "$SESSION_DIR"/*.jsonl; do
-        [[ -f "$file" ]] || continue
+    # Process both old format (*.jsonl) and new format (dir/events.jsonl)
+    find "$SESSION_DIR" -maxdepth 2 -name '*.jsonl' -type f | while read -r file; do
+        # Determine session ID based on format
+        if [[ "$(basename "$file")" == "events.jsonl" ]]; then
+            session_id=$(basename "$(dirname "$file")")
+        else
+            session_id=$(basename "$file" .jsonl)
+        fi
         
         # If keyword specified, check if any user message contains it
         if [[ -n "$KEYWORD" ]]; then
             grep -q '"type":"user.message"' "$file" 2>/dev/null || continue
             grep '"type":"user.message"' "$file" 2>/dev/null | grep -qi "$KEYWORD" || continue
         fi
-        
-        session_id=$(basename "$file" .jsonl)
         
         # Get timestamp from session.start
         start_time=$(grep -m1 '"type":"session.start"' "$file" 2>/dev/null | \

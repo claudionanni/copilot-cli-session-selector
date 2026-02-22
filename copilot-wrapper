@@ -38,16 +38,18 @@ if $SELECT_MODE; then
     
     # Build session list
     list_sessions() {
-        for file in "$SESSION_DIR"/*.jsonl; do
-            [[ -f "$file" ]] || continue
+        find "$SESSION_DIR" -maxdepth 2 -name '*.jsonl' -type f | while read -r file; do
+            if [[ "$(basename "$file")" == "events.jsonl" ]]; then
+                session_id=$(basename "$(dirname "$file")")
+            else
+                session_id=$(basename "$file" .jsonl)
+            fi
             
             # If keyword specified, check if any user message contains it
             if [[ -n "$KEYWORD" ]]; then
                 grep -q '"type":"user.message"' "$file" 2>/dev/null || continue
                 grep '"type":"user.message"' "$file" 2>/dev/null | grep -qi "$KEYWORD" || continue
             fi
-            
-            session_id=$(basename "$file" .jsonl)
             
             start_time=$(grep -m1 '"type":"session.start"' "$file" 2>/dev/null | \
                 sed -n 's/.*"startTime":"\([^"]*\)".*/\1/p' | cut -c1-19 | tr 'T' ' ')
@@ -66,8 +68,8 @@ if $SELECT_MODE; then
     if [[ -n "$selected" ]]; then
         short_id=$(echo "$selected" | awk '{print $1}')
         # Find full session ID from short prefix
-        for file in "$SESSION_DIR"/*.jsonl; do
-            full_id=$(basename "$file" .jsonl)
+        for entry in "$SESSION_DIR"/*; do
+            full_id=$(basename "$entry" .jsonl)
             if [[ "$full_id" == "$short_id"* ]]; then
                 exec "$COPILOT_REAL" --resume="$full_id" "${ARGS[@]}"
             fi
